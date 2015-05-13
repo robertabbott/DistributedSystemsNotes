@@ -1,0 +1,125 @@
+Distributed Systems for young bloods:
+LINK http://www.somethingsimilar.com/2013/01/14/notes-on-distributed-systems-for-young-bloods/
+lessons for 'young bloods':
+    Unlike other software distributed systems fail often
+    - Networked systems fail more than systems confined to a single machine
+    - DSs are more prone to partial failure than normal systems
+    - Partial failures are harder to reason about
+        Example: you have a distributed database where your writes don't always go
+        through. The network may be faulty, nodes may go down. The way this might be
+        solved on a single machine it to keep doing writes until they succeed. This
+        way your machine will eventually be consistent. However in the DS case where
+        only some of the nodes fail this approach will lead to inconsistency.
+        Inconsistency is bad because a query against the data stored on one node may
+        return different results than the same query on the other node. Solving this
+        inconsistency is much more difficult than a total failure (obviously).
+
+        Inconsistency vs availability is the whole cap theorem thing
+    - Moral of the story: design your system with (partial) failure in mind
+
+    Robust open source DSs are way less common than robust single-machine systems
+    - By nature it is more expensive and difficult to run a distributed system and it
+      is therefore difficult for open source communities to the the DS thang
+
+    Coordination is very hard:
+    - Avoid coordinating machines! The less communicaton and consensus between
+      machines the less DS stuff you actually have to do
+    - Networked communication is shitty and consensus is a pain (byzantine gen problem)
+    - MotS: minimize information transfer between nodes!
+
+    If you can fit your problem in memory, its not that hard
+    - Way more stuff is done on one machine cause its easier and lots of things dont
+      require a DS
+    - merge sort takes like 4 seconds to write in python (external merge sort is like
+      16 minutes) but if you have too much data and have to spread it across a bunch
+      of nodes thats a way way harder problem
+    - MotS: fewer problems have been solved with/on DSs than single machines
+
+    "It's slow" is the hardest problem to debug
+    - Can be caused by many different things
+    - Hard to debug shitloads of machines
+    - Zipkin is a tool (built by twitter) to help ameliorate the debugging process
+    MotS: if someone says "its slow" you might have to learn more about zipkin and
+    you might also be totally fucked
+LINK https://blog.twitter.com/2012/distributed-systems-tracing-with-zipkin
+
+    Implement 'backpressure' throughout your DS
+    - Backpressure is the signaling of failure from the serving system to the requesting
+      system
+    - Example: a system receiving too many requests stops handling requests and instead
+      dumps them and returns an error. This is shitty but can prevent starving machines
+      from dying causing the system to fail in an ungraceful, catastrophic manner
+    MotS: Implement something to protect the system from overload
+
+    Find ways to be partially available
+    - Example: Search. Better to return a mediocre result in some set period of time
+      than leave the user waiting forever while your half broken system is searching
+      all the world's documents
+    - Example: messaging. If a messaging system is overloaded rather than drop some
+      traffic from everyone drop all traffic from some users
+    MotS: Make partial availability decisions based on what is best for both your system
+    and the user
+
+    Metrics are the only way to get your job done
+    - Measuring latency and failure rates for actions is the only way to actually know
+      what your system is doing (not what you hope/wish it is doing)
+    - Logging is difficult, log for people who havent seen the code and it will be easier
+      to identify the error
+    MotS: If the logs and the metrics dont agree youre doing something stupid
+
+    Use percentiles not averages
+    - Measure things like latency with percentiles things dont follow bell curves is DSs
+    MotS: percentiles will give a better understanding than averages
+
+    Learn to estimate capacity
+    - Have a good idea of how much memory your machines have and how much if the shit
+      youre doing will fit in that space
+    MotS: Know numbers important to your system
+
+NUMBERS TO KNOW (according to J Dean)
+    L1 cache reference 0.5 ns
+    Branch mispredict 5 ns (fuck you intel)
+    L2 cache reference 7 ns
+    Mutex lock/unlock 25 ns
+    Main memory reference 100 ns
+    Compress 1K bytes with Zippy 3,000 ns
+    Send 2K bytes over 1 Gbps network 20,000 ns
+    Read 1 MB sequentially from memory 250,000 ns
+    Round trip within same datacenter 500,000 ns
+    Disk seek 10,000,000 ns
+    Read 1 MB sequentially from disk 20,000,000 ns
+    Send packet CA->Netherlands->CA 150,000,000 ns
+
+    Feature flags are how infrastructure is rolled out
+    - Feature flags allow you to make small cutovers and track a gradual infrastructure
+      roll out
+    - Example: replace monolithic DB with new storage solution.. Have the new service
+      include the old DB and slow channel more and more traffic to new service. Compare
+      new service' results with the old db (feature flag for comparison checks on read)
+    MotS: feature flags make things more complicated on one machine but allow you to
+    incrementally implement a new feature
+
+    Choose id spaces wisely
+    - The ids required to access a piece of data determine how (easily) that data can
+      be used
+    - Example: Twitter api 1 had a single numeric id for each tweet, and no other
+      information was associated with the tweet. This makes sorting tweets by age
+      easy on a single machine. To associate tweets with users you could add user
+      id to the tweet but now you cant just sort the tweets by age and people can
+      learn about your users based on the tweet metadata
+    MotS: carefully consider the identifying information (key) you want to associate
+    with some piece of data (value)
+
+    Misc Tips:
+    - Dont write cached data back to disk. Disk can change without the cache and you
+    dont want to write old data back to disk
+    - Keep CAP theorem in mind as you design your system
+    - Use services. Some set of distributed logic with a request-response style API can
+      be split into its own services. By partitioning the logic it makes dependency mgmt
+      easier.
+    - Service Examples: You want to upgrade storage without exposing the user to the
+      bullshit your doing. Wrap it in a service with a simple API and as long as your
+      new shit works with that API the client need never know about the upgrade
+      shenanigans
+
+

@@ -1,0 +1,18 @@
+LINK http://en.wikipedia.org/wiki/Fallacies_of_distributed_computing
+
+- The network is reliable
+- Latency is zero
+- Bandwidth is infinite
+- The network is secure
+- Topology doesnt change
+- There is one admin
+- Transport cost is zero
+- The network is homogeneous
+
+Effects of the afformentioned fallacies
+- Ignorance of network latency causes people to think less about how to control traffic
+  leading to an increase in packet loss
+- Ignoring network security leaves the system unprepared for maliciuous users
+- Multiple administrators for networks your traffic must cross may set different rules
+  regarding timeouts and stuff for packets. You must be aware of these rules to ensure
+  your traffic goes where you expect
