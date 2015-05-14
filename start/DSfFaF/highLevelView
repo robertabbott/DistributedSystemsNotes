@@ -1,0 +1,107 @@
+LINK http://book.mixu.net/distsys/intro.html
+
+Goal of distributed systems: Scalability
+Scalability: A system capable of handling a growing amount of work or its ability
+to grow to size where is can handle said growth
+
+Categories of scalability:
+- Size: increasing the number of nodes should make the system faster and decreasing
+  the amount of data should not increase latency
+- Geographic: Spreading out clusters will decrease latency responding to users but
+  must also be able to handle cross-data center latency
+- Administrative: Costs should scale at worst linearly with scale (preferably sub-
+  linearly)
+
+Characteristics of a scalable system:
+The Keys: performance and availability; a good system will maintain performance and
+availability even as data/traffic/users increase
+
+
+Performance:
+- Define performance:
+  the amount of work accomplished by the system / time it takes to do that work
+  and the resources required to complete the work in the desired amount of time
+- What performance may look like:
+  Short response time for some amount of work (ex: user request)
+  High throughput, bang out a lot of work per unit of time
+  Low utilization of computing resources
+
+There are always tradeoffs when optimizing performance. Listen to the DSFYBs guy
+and optimize your system so the performance the users see is optimal, unless youre
+low on money in which case maybe not..
+
+Ex: You could process more work by batching a bunch of requests, but that would
+increase latency
+
+Also you can onlu pay for lower latency to a point. At some point the speed of
+light is just going to be your problem.
+
+
+Latency:
+The amount of time between the initiation of an event and when it appears to the
+user that event has occurred
+
+Ex: User does a search the only thing that matters in how long it takes for the
+    photons from the results page hit the user's eyeballs. So you have to think
+    about network latency, computation time and how youll handle the request and
+    its associated computation when the system is heavily loaded
+
+
+Availability:
+The amount of time a system is functioning. If the user can't get the system to
+perform the work it is meant to do then that system is unavailable
+
+                Availability = uptime / (uptime + downtime)
+
+Distributed systems are good for availability because you can handle partial
+failures. A single machine is either up or down if it fails youre fucked. In DSs
+some machines can fail without effecting availability.
+
+If you have a shitload of nodes things will fail constantly so fault tolerance is
+imperative
+
+
+Fault Tolerance:
+A system that continues to behave normally even when faults occur. Figure out what
+faults you expect (hardware failure, slow network, heavy traffic) and figure out
+how to maintain performance when these things occur
+
+Physical constraints and how they make FT hard
+- number of nodes (CPUs and memory); the more work you need to do the more machines
+  you have to spread that work across
+  - more nodes means more failures you must be able to handle
+  - more nodes may mean more communication and as the DSFYBs guy says the more
+    communication the harder the system is to build, reason about and debug
+  - at some point number of nodes will be so large the geographic distance starts
+    to get big and latency puts a Hard limit on certain operations
+- physical distance between nodes; handling of long latency must be built into a
+  distributed system
+
+Abstraction and models: the things that make engineering possible (literally)
+Abstractions remove real world aspects of a problem that don't actual matter to your
+solution. Put in EE terms: you dont give a shit about MOSFET gate capacitance at low
+frequencies because is so small compared to everything around it, it doesn't matter.Don't worry about things that don't effect your solution. Unfortunately in DSs you
+have fewer luxuries in this department
+
+Models describe important properties of a system:
+- System model (async, synchronous)
+- Failure model (crash-fail, partition, Byzantine)
+- Consistency model (strong, eventual)
+
+Partition data:
+Partitioning data means splitting it up and story it in different places.
+- improves performance by limiting the amount of data you need to examine and
+  you can partition intelligently and put data that is related/often used together
+  on the same machine
+- improves availability since more nodes have to fail for things to totally not work
+
+There are many ways to do partitioning and many design trade-offs to be considered
+
+Replication of Data:
+Spread copies of data across multiple machines
+- Allows multiple machines to do work on the same data simultaneous (think return
+  the sum of a set of numbers)
+- Helps fight latency since the more replication, the more likely it is that the
+  thing you're looking for is close to you
+- Replication solves many problems and protects you from many more. However there is
+  of course a trade off: keeping replicated data consistent is no simple task

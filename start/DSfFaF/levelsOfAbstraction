@@ -1,0 +1,31 @@
+LINK http://book.mixu.net/distsys/abstractions.html
+
+Up and down the levels of abstraction
+
+A system model: properties of distributed systems
+- programs run concurrently on independent nodes
+- nodes are connected by a lossy network
+- no shared memory or clock
+
+Implications of these properties:
+- Each node exectures a program concurrently
+- Knowledge is local; information from the network may be out of date
+- nodes can fail and recover from failure independently
+- messages may not reach their destination or may take an inordinate amount of
+  time to reach their destination
+- clocks are not synchronized across nodes; local time stamps mean nothing on
+  other nodes
+
+System models enumerate the assumptions made regarding how a particular system
+will operate.
+
+Important questions about a system:
+- In what ways can nodes fail?
+- How is network performance?
+- properties of the system such as assumptions about time and order
+
+The weaker the assumptions the closer the system will be to reality. However this
+makes it harder to reason about the system.
+
+Model of nodes in a system:
+
