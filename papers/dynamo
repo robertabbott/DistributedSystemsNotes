@@ -1,0 +1,217 @@
+Dynamo:
+A highly available key-value store. Dynamo sacrifices consistency in some failure modes
+in exchange for partition tolerance and high availability. Key value stores have a
+simpler interface and require less specialized management than relation databases.
+
+System Assumptions and Requirements:
+Query model - Dynamo has simple put and get methods. These write and read data items
+and uniquely identifies that data item with a key. Data items are stored as binary blobs.
+Get and put methods operate on single data items. The simple interface obviates the need
+for a relational schema.
+
+ACID Properties (atomicity, consistency, isolation and durability):
+In databases a logical operation is known as a transaction. ACID guarantees typically
+lead to poor availability. Dynamo increases availability by having lower consistency
+requirements. Dynamo also makes no isolation guarantees.
+
+Efficiency:
+Dynamo operates on shitty hardware and must have low latency. Dynamo can be configured
+for specific services to enable those services to meet their latency and throughput
+requirements. This configuration comes at the cost of performance, cost efficiency,
+availability and durability.
+
+SLAs:
+Services that use dynamo must make guarantees to dynamo to ensure dynamo can perform as
+it is meant to. This means services must indicate the performance they expect from dynamo
+give the number of requests they expect to handle (among other things).
+
+Design Considerations:
+To increase availability in the face of network failures dynamo uses eventual consistency
+Changes are replicated asynchronously in the background. This allows for high
+availability but makes it possible for the data to diverge during a partition. Dynamo
+must make decisions regarding when to resolve these conflicts and who resolves them.
+
+When - The first consideration is when to resolve conflicting changes to the datastore;
+at read time or write time. Dynamo, unlike most datastores chooses to handle conflicts
+later than write time. This enables dynamo to always accept writes to the data store.
+
+Who - The second consideration is who performs conflict resolution. This task could be
+handled by the datastore or the application using the datastore (ie by checking
+timestamps as it uses data). Typically the application has more knowledge of the data
+and can therefore make better decisions on how to resolve conflicts. Dynamo allows the
+app to resolve conflicts and if it opts not to, a datastore policy such as last write
+wins may be chosen (dynamo uses vector clocks to determine timing of writes)
+
+Incremental Scalability: Dynamo can scale out one host at a time cause minimal impact on
+the system and users
+
+Symmetry: Since dynamo is a gossip protocol every node should have the same set of
+responsibilities. No node(s) should take special roles or responsibilities. This helps
+simplify the provisioning and maintenance of nodes.
+
+Decentralization: As a gossip protocol no failure effects the system worse than any other
+This improves availability and scalability
+
+
+How Dynamo differs from incumbent systems:
+- Dynamo's main concern is availability; it should be 'always writeable'. Updates are not
+  rejected due to node failures or concurrent writes.
+- Dynamo assumes it is running in an insulated, secure environment
+- Does not support hierarchical namespaces (like a file system would)
+- Does not support traditional relational schema (like a sql db)
+- Dynamo is extremely responsive and focuses on low latency even in the 99.9th percentile
+  of read/write operation times. Unlike traditional systems each node in dynamo has
+  sufficient routing information to route requests directly to the node with the data.
+  This means all requests are O(1) whereas traditional distributed hash tables might,
+  in the worst case, pass through all N nodes in a cluster before returning the value.
+
+Dynamo Architecture:
+
+Partitioning:
+How is it determined where a key value pair is stored?
+- The key is hashed. The hash values are given ranges. The key is put in the closest
+  range >= its hash. Each node in the cluster is responsible for its own randomly
+  assigned range.
+- This limits the impact of adding a new node to the cluster since only the nodes
+  neighboring ranges are affected
+
+Ranges are randomly assigned so its possible their ranges take up a small area on the
+ring causing more traffic to a single node.. how is this handled?
+- Each node gets assigned multiple ranges in the ring. This means each node is
+  responsible for multiple 'virtual nodes'
+- The number of virtual nodes a node has can vary based on its capacity making dynamo
+  capable of handling heterogeneous infrastructure
+
+Replication:
+- Each kv pair is replicated to N hosts
+- The node whose range the key falls in replicates it to the next N-1 hosts with ranges
+  >= that node's (when the highest range is reached it wraps around, which leads to the
+  ring based description of ranges)
+- The nodes responsible for a particular key is called a preference list
+
+Data Versioning:
+Dynamo provides eventual consistency. This means updates can be propagated to replicas
+asynchronously in the background. Under normal circumstances there is an upper bound
+on how long updates will take to propagate. However during a server outage or network
+partition updates can take much longer to propagate.
+
+Since put may not be propagated quickly, subsequent get calls may return un-updated data
+
+There are two modes of inconsistency: the most updated copy becomes unavailable, or a
+partition occurs and both sides of the partition are written to.
+
+How is option one handled?
+- In this case dynamo can usually heal itself by picking the most recent write since the
+  copies haven't diverged
+
+How is option two where the copies have diverged handled?
+- In this case there are two branches (not unlike git) and they must be reconciled by
+  the application. Applications may have different requirements and therefore may solve
+  conflicts in different ways.
+  Ex: if someone added an item to their shopping cart and
+  one item was added to the cart of one partition and another item to the other the best
+  solution would be to merge the two versions to have the desired cart
+
+Dynamo allows divergence and there can be many different version histories for an object
+therefore apps that use dynamo must design for, and be able to handle divergent object
+histories
+
+How is data versioned to enable apps to determine that an object has diverging histories?
+- Each version of an object has an associated vector clock. Vector clocks are a list of
+  (node, counter) pairs. By examining vector clocks it can be determined whether two
+  versions of an object are conflicting or not.
+
+  Ex: If all counters for version 1 are <= the counters for version two, there is no
+  conflict. If that is not the case the changes are in conflict and must be reconciled
+
+How does do dynamo clients update an object?
+When a client is working with an object other clients may be operating on the same object
+This can lead to multiple versions of the object being used by multiple clients. To
+these clients to update their object they must provide the version of the object with
+the put call. This is done by passing the objects context along with the key in the put
+call
+
+If a read is done on an object with multiple versions, all versions are returned to the
+client. If the client then updates this object it is assumes that the conflicts have
+been resolved and the different versions may be collapsed into the new update.
+
+Execution of Get and Put operations:
+Any storage node in a Dynamo cluster may handle get and put operations. A node handling
+a read/write operation is a coordinator. The coordinator is chosen based on the
+preference list of the key being operated on, typically the node at the top of the list
+is used.
+
+Each operation involves the first N (the value of N is part of the dynamo configuration)
+healthy nodes from a key's preference list. Nodes that are inaccessible are ignored.
+
+Dynamo achieves consistency among the N replicas in a similar manner to quorum systems.
+Dynamo has two configurable values: R and W. R and W represent the number of nodes that
+must confirm a read or write option (respectively) for that value to be committed. If
+R+W > N a quorum-like system is yielded since one operation must require a majority of
+members to agree on the value.
+
+Latency: latency of read and write operations is influenced by the R and W values since
+their speed is dictated by the slowest node involved in the decision. The lower R and W
+the less the latency.
+
+Handling put requests: When a put(key, value) call is received by the coordinator it
+generates a vector clock for version of the kv pair and writes the pair locally. The
+coordinator then sends the new kv pair to the N highest nodes on the preference list.
+If the coordinator received W-1 affirmative responses the write is considered a success
+
+Handling get requests: When a get call is received by the coordinator it requests the
+kv pairs from the N highest nodes on the preference list for that key. Once it has R
+responses it returns a value to the client. However if the coordinator receives multiple
+versions that are causally unrelated (divergent) it returns all versions to the client.
+
+
+Hinted Handoff:
+In order to preserve availability in the face of failures dynamo uses replicas with
+hinted handoff. Nodes data are replicated to another node and if they go down that node
+will take its place. The replica contains a hint of who it was replicating, this way
+when the original node comes back online the replica will be copied back to the original
+node and it can continue operating. This increases availability: for instance if W is
+set to 1, then every node on the preference list of a particular key would have to fail
+for a write operation to fail.
+
+
+Replica Synchronization:
+Hinted handoff works well if churn is low and nodes come back online in a reasonable
+amount of time after a failure. However it is possible that a node could fail and the
+replica node also failed before returning the replica to the original node. To prevent
+this dynamo makes an effort to keep replicas synchronization.
+
+Inconsistencies between replicas are detected using merkle trees (which are sick).
+Merkle trees contain information about a kv store. Each leaf of the M-tree is the
+hash of an individual key's value. Trunk nodes represent a hash of multiple nodes.
+By traversing the merkle tree of two datastores it can quickly be determined where
+inconsistencies in the replicas are. Since hashes are much smaller than the data they
+represent, inconsistencies can be found by transferring a much smaller amount of data.
+
+To find an inconsistency between two node's data they simply exchange the roots of
+the merkle tree of the data range they share and traverse the trees to find all
+inconsistencies.
+
+The downside to this approach is that merkle trees for many different ranges must be
+calculated when nodes leave or join the cluster.
+
+
+Membership and Failure Detection:
+Cluster membership can be managed by issuing join or remove commands. Whenever a command
+is issues the request is written with a timestamp to persistent store then propagated
+to the rest of the cluster via a gossip-based protocol.
+
+Range handling for new members: when a node joins the cluster it is randomly assigned
+some number of ranges. If these ranges overlap with the ranges of existing nodes those
+nodes will yield the keys now in the range of the new node to that node. When a node
+exits the reverse occurs.
+
+
+Implementation:
+There are three main components to dynamo: request coordination, membership and failure
+detection and a local persistence engine
+
+Local persistence component: amorphous; can be use with sql, Berkeley DB transactional
+data store and other persistent storage software. By making the persistence component
+pluggable dynamo is more flexible. Different datastores can handle different size objects
+BDB is capped at 10s of KB where sql can handle larger objects
