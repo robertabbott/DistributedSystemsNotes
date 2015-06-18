@@ -1,0 +1,175 @@
+https://ramcloud.stanford.edu/raft.pdf
+
+
+Raft Basics:
+Raft clusters should have an odd number of servers and can handle (n-1)/2 servers
+failing n = number of nodes. This is because raft make decisions my getting consent
+from s servers where s > n/2.
+
+Nodes in a raft cluster can be in one of 3 states: leader, candidate, follower
+During normal behaviour there is one leader and all other nodes are followers. In normal
+operation followers issue no requests. Followers respond to requests from candidates and
+leaders. If a client sends a request to a follower the follower simply forwards that
+request to the leader.
+
+Raft divides time into terms. Terms mean nothing time-wise but they are a way of
+determining if a leader (and its log entries) are valid or stale. Each term starts with
+the election of a new leader. If the election fails (due to split vote) that term will
+pass without a leader and a new election will be triggered. There cannot be multiple
+leaders in a particular term.
+
+Terms serve as a logical clock. Each node tracks the current term it is aware of. If a
+node receives a message from a node with a higher term number it updates to that term.
+If a candidate or leader has to update its term it immediately reverts to follower.
+If a server receives a request with an older term number it will reject that request.
+
+Raft requires only RequestVote and appendEntries RPCs. Candidates send RequestVote rpcs
+to cluster members to start an election. Leaders send appendEntries rpcs to inform the
+followers what entries they should be putting in their log. If a server does not receive
+a response before some timeout it will resend the RPC message.
+
+
+Leader Election:
+Nodes start as followers and stay that way as long as they receive a valid RPC from a
+candidate or leader before an 'election timeout' passes. If the node times out it will
+become a candidate and trigger an election by incrementing its term and sending
+RequestVote RPCs to all known members of the cluster, in parallel for performance.
+
+Election outcomes:
+Victory: the node acquires > n/2 votes and declares itself leader
+Someone else wins: node becomes follower
+No winner before timeout: inc term and trigger another election
+
+Winning an election: Each node can only vote for one candidate per term and will vote
+for the first node to send it a valid RequestVote RPC (candidate term > node's term)
+Upon victory the node sends out a heartbeat (appendEntries rpc with no log entries) to
+establish its authority.
+
+Losing candidates become followers when they receive an appendEntries request with a term
+>= to their term
+
+In the case of no winner (due to many candidates or something) another election is
+triggered when some candidate time out. Time outs are randomized to prevent multiple
+candidate from timing out in sync.
+
+
+Log Replication:
+When a leader is elected the leader starts handling requests from clients. When a client
+request is received the leader appends that request to its log and broadcasts the log
+to the followers. If followers are slow to respond or unavailable the leader will
+continue sending the appendEntries message indefinitely.
+
+Each log entry stores a command to be performed (some interface probably) and the term
+number the leader passes with the appendEntries rpc.
+
+Once the appendEntries rpcs have been sent the leader waits until it has > n/2 responses.
+Once the leader has > n/2 responses it knows the log has been replicated to more than
+half the machines. At this point the leader executes the log entry's command and returns
+the result to the client. An entry that has achieved the aformentioned quorum is
+committed. Committing an entry means all logs preceding it are also committed.
+
+The leader tracks the highest index it knows to be committed. This index is passed with
+appendEntries messages. When a node gets an appendEntries message it checks this index
+and performs commands in the log (in order) until it is level with the leader.
+
+Followers ensure log entries with the same term and index are identical. This is done by
+checking the committedIndex in appendEntries messages. If a follower does not have an
+entry with the same committedIndex and term the appendEntries message is refused.
+
+Inconsistency can occur when leaders die. This can leave changes committed on some nodes
+but not others. The leader handles inconsistency by forcing the followers to copy its log
+
+To force followers to copy its log the leader tracks nextIndex for each follower.
+When the leader takes power it sets nextIndex to x+1 where x is its last entry. The
+leader then sends appendEntries rpcs to nodes. If a node responds with rejection the
+leader decrements that node's nextIndex value. The leader continues this process until
+it finds a match in the follower's log at which point the follower copies the leaders
+log and becomes consistent.
+
+
+Safety:
+To ensure all state machines execute the same commands more rules must be added for
+who can become a leader. For a candidate to be elected they must have committed all
+entries from preceding terms. This ensures logs always flow from leader to followers
+and the leader does not need to add entries when it comes into power. A candidate must
+have term and entries equal to or more up to date than a majority of the cluster.
+This ensures the leader is up to date. This check is done by including the candidate's
+term and index committed, and a node will vote for the candidate if and only if the
+candidate's log is equal or more up to date than theirs.
+
+Since entries require a majority to replicate them before they can be committed, if
+a candidate gets a majority of votes they must be up to date. Even if n/2 of the voters
+all out of date the last voter must be up to date and therefore ensures the new leader
+is up to date as well.
+
+Committing Entries from previous terms:
+If a leader dies before committing an entry that has been replicated to a majority of
+the servers, future leaders will try to commit that entry. An issue could arise where
+a new leader that didn't have the old leaders entry could overwrite that entry. Raft
+prevents this by ensuring that a leader is at least as up to date as a majority of the
+cluster. Therefore there is no way a new leader could be missing the latest entry
+
+Candidate or Followers dying:
+Leader continues to send AppendEntries rpcs to them forever and if they come back up
+they'll be fine. If they don't come back up apparently we don't care.
+
+
+Timing:
+In order for raft to function leader elections must take significantly less time than
+the amount of time between server crashes. This ensures there will be a reasonably steady
+leader and the log can make progress. broadcastTime << electionTimeout << MTBF (mean time
+between failures for a single server). Election timeout should be at least 10x the
+broadcastTime
+
+
+Cluster Membership:
+Typically the servers in the cluster are set by a configuration that does not change.
+However Raft needs to be able to handle changes to the configuration. This presents some
+issues. During the switch from one configuration to another Raft must ensure there can
+never be more than one leader committing log entries. To maintain one leader the config
+switch must be done in two phases. This process is called 'joint consensus'.
+
+To start the process the leader is sent a special changeConfig log entry. Once this entry
+is committed the old and new leaders cannot make decisions without first asking the other
+This ensures that a new leader will be elected that is in both configurations. Once this
+leader is elected it will create a log entry for the new config and commit that to the
+cluster
+
+To prevent excommunicated nodes from interfering with the cluster (by timing out and
+starting elections) servers will ignore RequestVote RPCs if they believe a leader exists.
+A node will only respond to RequestVote RPCs if its election timeout has completed. This
+means that as long as a leader is able to send heartbeats to the cluster it will not be
+deposed.
+
+
+Log Compaction:
+For the sake of memory and efficiency when bringing up new servers the log must be
+compacted occasionally. To shrink the log Raft employs snapshotting. This involves
+capturing the state of the log at a point in time and using that as the starting point.
+Snapshots are written to stable storage. In Raft each server snapshots itself
+independently. Having the leader snapshot and send the snapshot to other servers is too
+network intensive and decreases availability.
+
+Some metadata is included with snapshots: last included index and term are provided so
+a server can know how up to date a snapshot is. The snapshot also includes the cluster
+configuration at the time it was created.
+
+
+Client Interaction:
+When a client connects to the cluster it picks a server randomly. If the server is not
+the leader it will reject the request and send the client the address of the current
+leader. If the leader has crashed the client's request will time out, if this happens
+the client will try again with another randomly chosen server. This can cause issues
+if a leader crashes in between committing a log entry and responding to the client
+because the same request may then be sent and committed multiple times. To prevent this
+clients attach a serial number to each command they send. If a server receives a request
+where the serial number is already in its log it can respond instantly and does not
+execute the request again.
+
+Read-only operations could yield stale data without certain precautions. If a leader
+is deposed while handling a request it may return stale data. To prevent this a leader
+must know which entries have been committed. To ensure the leader knows what has been
+committed it first commits a no-op log entry when it comes to power. Leaders must also
+check that they are still leader before handling a read-only request. To do this the
+leader sends a heartbeat and only responds to the request if it receives responses from
+a majority of the cluster.

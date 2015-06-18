@@ -27,5 +27,27 @@ Important questions about a system:
 The weaker the assumptions the closer the system will be to reality. However this
 makes it harder to reason about the system.
 
-Model of nodes in a system:
 
+Model of nodes in a system:
+Nodes are hosts for computation and storage. Nodes can execute a program and are capable
+of storing data in both volatile and stable memory. Nodes also have a clock which is
+presumed to be inaccurate
+
+Communication between nodes:
+If the network were perfect nodes could always be expected to arrive in order. However
+in the real world it is more likely the network will be unreliable. Messages may arrive
+out of order or not at all.
+
+Network Partition:
+When the network fails but the nodes do not. This means a client may make a request to a
+node that can't communicate with the rest of the network. This node may serve stale data
+or hang.
+
+Timing:
+Systems are typically modelled in two ways:
+    - Synchronous: processes execute in lock-step and there is a known upper bound on
+      transmission delay
+    - Asynchronous: clocks don't exist; process execute at independent rates and there
+      is no bound on message transmission time
+
+Real world systems are at best partially synchronous
