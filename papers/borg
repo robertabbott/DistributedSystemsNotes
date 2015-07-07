@@ -1,0 +1,276 @@
+Large-scale cluster mgmt: Borg
+(kubernetes is basically an open source Go implementation of borg)
+
+What does borg do?
+Borg admits, schedules, starts, restarts, and monitors a range of applications google runs.
+
+What are the benefits of borg?
+- Borg hides the details of resource mmt and failure handling so users don't have to
+- Highly reliable and available
+
+How do users interact with borg?
+Users submit the applications/services they want to run in the form of jobs. Each job consists
+>= 1 task that runs the same binary (ie one binary per job). Each job runs in a borg 'cell'
+
+Definition of a borg cell:
+A set of machines that are managed as a unit
+
+
+Anatomy of borg cell's workload:
+Borg cells run heterogenous workloads with two main parts:
+- long running services that should "never" go down.. these services handle requests
+  that are latency sensitive. The include user facing projects (gmail, search, etc)
+  and internal tools like BigTable
+- batch jobs that take longer to complete (ie a few seconds up to weeks), since the
+  work for these jobs is so spread at they aren't sensitive to ephemeral fluctuations
+  in #performance (hence they are lower priority)
+- Jobs are classified by priority. In general long-running server jobs are prod and
+  batch jobs are non-prod
+- A cell might allocate 70% of CPU resources and 55% of memory to prod
+
+
+Properties of a borg job:
+- name, owner, number of tasks it has
+- constraints regarding the type of machine it runs on (ie processor arch, OS version, EIP address)
+- constraints can be hard or soft, soft constraints behave as preferences
+- jobs can be deferred until a prior job completes
+- a job runs in one cell
+- cells typically reside in a single data center and include a mix of thousands
+  or tens of thousands of machines
+
+Task properties:
+- tasks specify their resource requirements
+- tasks know their index within the list of tasks in a job
+
+What does borg do when a cell is over-scheduled?
+Borg solves this problem with priority and quota. Every job has a priority (some int).
+High priority tasks may obtain resources at the expense of peasant jobs. Priority
+is bucketed into several categories each with different rules and capabilities.
+
+Example of priority bucket policies:
+To prevent cascades of preemption tasks in the prod band cannot preempt one another
+even though one might have a higher priority int than the other
+
+What does quota do?
+Quota is used to determine which jobs should be scheduled. Quota contains the
+resources it needs with a given priority for a given amount of time. Quota
+has a cost and this is the method used for psuedo billing people. Since
+people (in theory) have limited quota they will be less inclined to inflate
+the requirements of their job.. This an issue we're dealing with at square
+- square also needs a monitoring system to determine the resources a job
+  is actually using
+
+
+Naming and Monitoring:
+How do people figure if their apps are running or whatever?
+
+Borg provides the "borg name service". This provides a name for each task.
+The name includes cell name, job name, and task number. Borg writes
+hostname and port into a file in chubby. This allows the borg rpc system to
+find the task endpoint it is looking for
+
+Most tasks also have an HTTP server that publishes health information and
+performance metrics. Borg monitors this health check endpoint and restarts
+services that dont respond when queried
+
+
+The borg architecture:
+A borg cell is controlled by a Borgmaster, and each machine runs a Borglet
+agent that communicates with the Borgmaster
+
+Borgmaster:
+Borgmaster consists of two processes: the borgmaster and a scheduler. The
+borgmaster responds to clients RPCs to 'mutate state' (ie create a job)
+or provide access to data (ie lookup a job). The borgmaster is replicated
+with a paxos-based datastore so that the borgmaster is extremely available
+
+The borgmaster that runs the cells is elected by the paxos datastore and
+when a borgmaster dies a new leader is elected
+
+Scheduling:
+When jobs are submitted they are placed in the paxos store and the job's tasks
+are added to the pending queue. The pending queue is frequently scanned by the
+scheduler.
+
+How does the scheduler determine when and where to run a task?
+The scheduler scans the queue from highest to lowest priority and switches
+between tasks of equal priority in a round robin fashion. The scheduler
+then looks for machines with sufficient available resources (or lower
+priority tasks that may be evicted to free the necessary resources) and
+scores how good they would be to run the task.
+
+How is 'goodness' determined?
+Goodness is a score driven by a desire to minimize number and priority of
+preempted tasks. Machines with a tasks dependencies already install are
+also preferred. The scheduler also seeks to create a mix of priorities on
+each machine.
+
+What is the cost of packing tasks tightly on machines?
+Machines are optimally utilized in this scenario. However, if a task begins
+to take more resources than borg or the developers expected, it can decrease
+performance. The alternative, packing machines not tightly gives room for tasks
+to grow but leaves more unused capacity.
+
+Borglet:
+The borglet is a borg agent that runs on every host in a cell (similar to
+consul agent?). The borglet start and stops tasks and restarts them if they
+fail. The borglet is polled periodically to retrieve the machine's current
+state (ie health of tasks, what has completed). If a borglet ceases to
+respond to the heartbeat/health check it is marked dead and the master
+reschedules that machine's tasks.
+
+Scalability:
+
+
+Availability:
+||||||| merged common ancestors
+=======
+Large-scale cluster mgmt: Borg
+(kubernetes is basically an open source Go implementation of borg)
+
+What does borg do?
+Borg admits, schedules, starts, restarts, and monitors a range of applications google runs.
+
+What are the benefits of borg?
+- Borg hides the details of resource mmt and failure handling so users don't have to
+- Highly reliable and available
+
+How do users interact with borg?
+Users submit the applications/services they want to run in the form of jobs. Each job consists
+>= 1 task that runs the same binary (ie one binary per job). Each job runs in a borg 'cell'
+
+Definition of a borg cell:
+A set of machines that are managed as a unit
+
+
+Anatomy of borg cell's workload:
+Borg cells run heterogenous workloads with two main parts:
+- long running services that should "never" go down.. these services handle requests
+  that are latency sensitive. The include user facing projects (gmail, search, etc)
+  and internal tools like BigTable
+- batch jobs that take longer to complete (ie a few seconds up to weeks), since the
+  work for these jobs is so spread at they aren't sensitive to ephemeral fluctuations
+  in #performance (hence they are lower priority)
+- Jobs are classified by priority. In general long-running server jobs are prod and
+  batch jobs are non-prod
+- A cell might allocate 70% of CPU resources and 55% of memory to prod
+
+
+Properties of a borg job:
+- name, owner, number of tasks it has
+- constraints regarding the type of machine it runs on (ie processor arch, OS version, EIP address)
+- constraints can be hard or soft, soft constraints behave as preferences
+- jobs can be deferred until a prior job completes
+- a job runs in one cell
+- cells typically reside in a single data center and include a mix of thousands
+  or tens of thousands of machines
+
+Task properties:
+- tasks specify their resource requirements
+- tasks know their index within the list of tasks in a job
+
+What does borg do when a cell is over-scheduled?
+Borg solves this problem with priority and quota. Every job has a priority (some int).
+High priority tasks may obtain resources at the expense of peasant jobs. Priority
+is bucketed into several categories each with different rules and capabilities.
+
+Example of priority bucket policies:
+To prevent cascades of preemption tasks in the prod band cannot preempt one another
+even though one might have a higher priority int than the other
+
+What does quota do?
+Quota is used to determine which jobs should be scheduled. Quota contains the
+resources it needs with a given priority for a given amount of time. Quota
+has a cost and this is the method used for psuedo billing people. Since
+people (in theory) have limited quota they will be less inclined to inflate
+the requirements of their job.. This an issue we're dealing with at square
+- square also needs a monitoring system to determine the resources a job
+  is actually using
+
+
+Naming and Monitoring:
+How do people figure if their apps are running or whatever?
+
+Borg provides the "borg name service". This provides a name for each task.
+The name includes cell name, job name, and task number. Borg writes
+hostname and port into a file in chubby. This allows the borg rpc system to
+find the task endpoint it is looking for
+
+Most tasks also have an HTTP server that publishes health information and
+performance metrics. Borg monitors this health check endpoint and restarts
+services that dont respond when queried
+
+
+The borg architecture:
+A borg cell is controlled by a Borgmaster, and each machine runs a Borglet
+agent that communicates with the Borgmaster
+
+Borgmaster:
+Borgmaster consists of two processes: the borgmaster and a scheduler. The
+borgmaster responds to clients RPCs to 'mutate state' (ie create a job)
+or provide access to data (ie lookup a job). The borgmaster is replicated
+with a paxos-based datastore so that the borgmaster is extremely available
+
+The borgmaster that runs the cells is elected by the paxos datastore and
+when a borgmaster dies a new leader is elected
+
+Scheduling:
+When jobs are submitted they are placed in the paxos store and the job's tasks
+are added to the pending queue. The pending queue is frequently scanned by the
+scheduler.
+
+How does the scheduler determine when and where to run a task?
+The scheduler scans the queue from highest to lowest priority and switches
+between tasks of equal priority in a round robin fashion. The scheduler
+then looks for machines with sufficient available resources (or lower
+priority tasks that may be evicted to free the necessary resources) and
+scores how good they would be to run the task.
+
+How is 'goodness' determined?
+Goodness is a score driven by a desire to minimize number and priority of
+preempted tasks. Machines with a tasks dependencies already install are
+also preferred. The scheduler also seeks to create a mix of priorities on
+each machine.
+
+What is the cost of packing tasks tightly on machines?
+Machines are optimally utilized in this scenario. However, if a task begins
+to take more resources than borg or the developers expected, it can decrease
+performance. The alternative, packing machines not tightly gives room for tasks
+to grow but leaves more unused capacity.
+
+Borglet:
+The borglet is a borg agent that runs on every host in a cell (similar to
+consul agent?). The borglet start and stops tasks and restarts them if they
+fail. The borglet is polled periodically to retrieve the machine's current
+state (ie health of tasks, what has completed). If a borglet ceases to
+respond to the heartbeat/health check it is marked dead and the master
+reschedules that machine's tasks.
+
+
+Isolation:
+Borg machines run many tasks (25 in the 90%ile) and many more threads (4500 in
+the 90%ile). This increases utilization but requires special mechanisms to prevent
+the tasks from interfering with one another.
+
+Security Isolation: Each task is isolated by the linux chroot jail. Debug access
+is allowed via borgssh which creates an ssh connection to a shell in the same
+chroot and cgroup as the user's task. To run external software borg uses VMs
+and security sandboxing techniques. Each hosted machine (used by AppEngine and
+GCE) runs in a KVM process that is scheduled and run as a borg task.
+
+Performance Isolation: In order to ensure tasks don't interfere with one another
+borg must ensure that tasks use only the resources they have been allocated.
+Borg tasks run in cgroup-based resource containers and Borglet agents manipulate
+the container settings improving control. The borglet assigns memory to containers
+based on predicated use. The borglet alos kills tasks that try to allocate beyond their memory limits.
+
+
+Lessons:
+Having jobs be the only unit of sheduling is inflexible and can complicate work. ie if
+a user has a batch of related jobs they are at the mercy of borg regarding whether
+they run simultaneously.
+
+One IP per machine complicates things. All tasks on a machine share the same IP and
+therefore the same port space. For this reason ports must be scheduled. Apps indicate
+how many ports they need and must accept whatever ports borg gives them. Kubernetes
+does not suffer from this problem and each pod and service gets its own IP.
