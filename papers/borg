@@ -123,8 +123,6 @@ Scalability:
 
 
 Availability:
-||||||| merged common ancestors
-=======
 Large-scale cluster mgmt: Borg
 (kubernetes is basically an open source Go implementation of borg)
 
@@ -274,3 +272,43 @@ One IP per machine complicates things. All tasks on a machine share the same IP 
 therefore the same port space. For this reason ports must be scheduled. Apps indicate
 how many ports they need and must accept whatever ports borg gives them. Kubernetes
 does not suffer from this problem and each pod and service gets its own IP.
+
+Borg is designed to handle failures (as any large scale system should). To handle
+failures borg replicates tasks, stores them in a distributed datastore and
+occasional takes checkpoints in the execution of a task. Borgs acts to mitigate
+the impact of eviction or failure. Borg does the following:
+- automatically reschedules evicted tasks
+- reduces correlated failures by spreading tasks across failure domains, (ie
+  machines, racks, power domains).
+- limits rate of task disruptions
+- using idempotent operations so a failed client can resend requests without consequence
+- limits the number of tasks it reschedules to new machines since borg cannot distinguish
+  between machine failures and network partition -- partitioned machines may continue
+  working and rejoin whereas in a failure case the data would be lost and the job
+  restarted. By limiting the number of tasks rescheduled borg amortizes the cost
+  of rescheduling tasks
+- avoids task<->machine pairings that cause the machine to crash (ie if some app
+  crashes boxes running centOS7 but not other OSs that app will stop being scheduled
+  on boxes running CentOS7)
+- recovers intermediate data written to local disk even after app has been died
+
+If the borgmaster or a task's borglet dies the task continues to run. However if the
+borgmaster is down, new jobs can not be submitted and tasks from failed machines
+will not be rescheduled
+
+Utilization:
+Borgs used several different techniques to increase utilization while leaving
+headroom for spikes in usage. These techniques include:
+
+Cell Sharing: Prod and non-prod jobs share cells. This allows room for prod jobs to
+grow because their is less impact if non-prod jobs are pre-empted. However having
+many jobs share the same machine can lead to interference which increases the
+average cycles per instruction. However it was found that this is not the case in borg.
+
+Fine-grained resource requests: Jobs specify how much memory, disk and CPU they will
+require. Borg allows users to specify CPU in units of milli-cores (where a core is
+a processor hyperthread) and memory/disk space in bytes. This granularity decreases
+the amount of resources wasted by a job.
+
+Resource Reclamation: Borg tries to predict when tasks won't use all the resources
+they request and reclaims them for batch jobs.
