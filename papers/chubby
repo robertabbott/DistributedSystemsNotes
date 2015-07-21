@@ -1,3 +1,22 @@
 Notes on the Chubby lock service
 
 Introduction:
+Chubby is a lock service for distributed systems with moderately large numbers of
+machines. The clients of a chubby cell are often colocated in the same data centre
+or machine room. The lock service allows clients to synchronize activities and
+agree on environment information. The primary goal of chubby is realiability,
+availability and large sets of clients. Throughput and storage capacity were
+secondary considerations.
+
+Chubby enables coarse grain synchronization in their systems. One example is
+leader election from among an other wise equal set of servers. Clients in a
+google file system use chubby locks to determine a leader. GFS and BigTable
+use chubby to store small amounts of metadata this metadata is the root of
+the distributed data structures these tools operate on. For instance GFS might
+store the GFS equivalent of a superblock in chubby (I'm guessing). Chubby
+enables dynamic leader election.. like Square would like to have as opposed to
+have a hard-coded leader and requiring some sort of intervention if the leader
+goes down.
+
+
+Design:
