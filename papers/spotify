@@ -1,0 +1,38 @@
+Notes on spotify's streaming protocol and p2p architecture
+
+Caching:
+- cached data is encrypted. How does spotify distribute keys?
+  The app itself will definitely need access to a key to perform
+  en/decryption operations
+- are keys different across clients.. how is data en/decrypted
+  in the p2p protocol
+- cached data is written to disk. 50 MB > cache size < 10 GB
+  and cache size < 10% of free disk space
+- user can configure cache size
+- LRU is the cache eviction policy
+- Cache size is large relative to object size so choice of
+  eviction policy is not that important
+
+TCP Flow control:
+- TCP flow control limits the number of packets that can be
+  sent without receiving an ACK
+- The longer a TCP connection has been alive the large the
+  number of packets that can be sent without receiving an
+  ACK
+- RFC 5681 states that the congestion window should be
+  decreased if no data is sent for an interval greater
+  than the TCP re-transmission timeout
+- This feature can be turned off in operating systems
+  running the linux kernel. When spotify turned it off
+  average latency decrease by 50ms
+
+Spofity's p2p network:
+Since tracks are small and downloading them from the
+p2p network is a relatively frequent operation the
+overhead of discovering and connecting to peers with
+the desired file must be low
+- Spotify servers run a tracker. The tracker maintains
+  a mapping of tracks to peers that have recently
+  reported having that track.
+- Peers only serve a track if they have the entire
+  track cached
