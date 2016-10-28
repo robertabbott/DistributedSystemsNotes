@@ -1,0 +1,24 @@
+OS-level threads vs Green Threads
+
+OS-level threads or native threads are created and managed by the os.
+Most languages support such threads but the user becomes responsible
+for preventing problems. ie locking on shared data structures
+
+Green threads are managed by the language's runtime (ie goroutines).
+Green threads allow the language to choose when a context switch occurs
+(ie at the end of a statement). This helps avoid things like partially
+copied objects and makes lock unnecessary for many data structures.
+
+For example.. when a green thread make a blocking 'syscall' like
+f.Read(buf) it goes os.Read -> os.read -> os.pread -> syscall.Pread
+-> unix.Syscall6(trap (trap is a pointer to that syscall, args...) -> 
+this calls Entersyscall, a go runtime function that switches to
+an os allocated stack (so as not to block other goroutines or Go's
+garbage collector) to run the actual syscall. When the syscall
+completes it switches back to the original stack and returns the
+response. exitsyscall is then called which blocks until go is able
+to run the routine again.
+
+By doing this the Go (language) runtime can schedule go routines
+on a single 'logical processor' which is actually just an OS thread
+GOMAXPROCS allows Go to run on multiple OS threads.

@@ -1,3 +1,24 @@
 https://blog.twitch.tv/gos-march-to-low-latency-gc-a6fa96f06eb7#.qa628cwe3
 
+How Go GC works:
+Go GC has two phases: a mark phase and a sweep phase. During the mark phase
+the gc determines what memory is used. The mark phase runs concurrently with
+user code then a pause occurs for the mark phase to terminate. During the
+sweep phase memory is gradually prepared for reuse while the user code continues
+to run. 
+-- gctrace in the go runtime summarizes each gc cycle
 
+On go routines:
+Go routines start with an 8k stack. When a function is called go ensures there
+is enough stack space for the next function call. If there is not the goroutines
+stack is moved to a larger chunk of memory and pointers are rewritten to that
+new memory area. When a thread no longer requires a large amount of memory the
+gc will call runtime.shrinkstack and recover some of the memory used by the stack.
+Stack shrinking can be disabled to speed up gc at the cost of using more memory
+per go routine than is strictly necessary
+
+GC and page faults:
+Page faults occur when the os tries to access memory mapped to the virtual address
+space (memory available to a process) but the page is not actually in RAM (The more
+virtual memory a process allocates the more likely page faults are). These are slow
+af since the os has to pull the page from disk and ideally wouldn't happen during gc
